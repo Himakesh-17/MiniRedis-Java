@@ -118,4 +118,53 @@ class CommandTest {
         parser.parseAndExecute("SET big " + Long.MAX_VALUE);
         assertEquals("(error) ERR value is not an integer or out of range", parser.parseAndExecute("INCR big"));
     }
+
+    @Test
+    void testTtlWithoutExpiry() {
+        parser.parseAndExecute("SET user Alice");
+        assertEquals("-1", parser.parseAndExecute("TTL user"));
+    }
+
+    @Test
+    void testTtlNonExistentKey() {
+        assertEquals("-2", parser.parseAndExecute("TTL non_existent"));
+    }
+
+    @Test
+    void testSetWithExAndTtl() {
+        assertEquals("OK", parser.parseAndExecute("SET session abc123xyz EX 30"));
+        assertEquals("abc123xyz", parser.parseAndExecute("GET session"));
+        long ttl = Long.parseLong(parser.parseAndExecute("TTL session"));
+        assertTrue(ttl > 0 && ttl <= 30);
+    }
+
+    @Test
+    void testLazyExpiration() throws InterruptedException {
+        // Set key with 1 second TTL
+        assertEquals("OK", parser.parseAndExecute("SET temp key123 EX 1"));
+        assertEquals("key123", parser.parseAndExecute("GET temp"));
+
+        // Wait 1.1 seconds so key expires
+        Thread.sleep(1100);
+
+        // Accessing expired key should trigger lazy expiration
+        assertEquals("(nil)", parser.parseAndExecute("GET temp"));
+        assertEquals("-2", parser.parseAndExecute("TTL temp"));
+        assertEquals("0", parser.parseAndExecute("EXISTS temp"));
+    }
+
+    @Test
+    void testExpireCommand() throws InterruptedException {
+        parser.parseAndExecute("SET token secret");
+        assertEquals("-1", parser.parseAndExecute("TTL token"));
+
+        // Set expiration using EXPIRE
+        assertEquals("1", parser.parseAndExecute("EXPIRE token 1"));
+        long ttl = Long.parseLong(parser.parseAndExecute("TTL token"));
+        assertTrue(ttl > 0 && ttl <= 1);
+
+        Thread.sleep(1100);
+        assertEquals("(nil)", parser.parseAndExecute("GET token"));
+        assertEquals("0", parser.parseAndExecute("EXPIRE token 10")); // Cannot expire nonexistent key
+    }
 }

@@ -27,6 +27,8 @@ public class CommandParser {
         commandRegistry.put("KEYS", new KeysCommand());
         commandRegistry.put("INCR", new IncrCommand());
         commandRegistry.put("DECR", new DecrCommand());
+        commandRegistry.put("TTL", new TtlCommand());
+        commandRegistry.put("EXPIRE", new ExpireCommand());
     }
 
     /**

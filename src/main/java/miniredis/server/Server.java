@@ -1,6 +1,7 @@
 package miniredis.server;
 
 import miniredis.command.CommandParser;
+import miniredis.store.ExpiryManager;
 import miniredis.store.Store;
 
 import java.io.IOException;
@@ -14,6 +15,7 @@ public class Server {
     private final int port;
     private final Store store;
     private final CommandParser commandParser;
+    private final ExpiryManager expiryManager;
 
     // Fixed pool of 10 worker threads to handle concurrent clients
     private final ExecutorService threadPool = Executors.newFixedThreadPool(10);
@@ -24,6 +26,7 @@ public class Server {
         this.port = port;
         this.store = store;
         this.commandParser = new CommandParser(store);
+        this.expiryManager = new ExpiryManager(store);
     }
 
     public Server(int port) {
@@ -45,6 +48,7 @@ public class Server {
 
             // Clean shutdown when process receives SIGINT / Ctrl+C
             Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
+            expiryManager.start();
 
             // Main accept loop: listen for clients continuously
             while (running) {
@@ -72,6 +76,7 @@ public class Server {
         }
         running = false;
         System.out.println("[Server] Shutting down MiniRedis server...");
+        expiryManager.stop();
 
         if (serverSocket != null && !serverSocket.isClosed()) {
             try {

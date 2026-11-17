@@ -100,19 +100,28 @@ Built without external heavy frameworks (no Spring, no Netty), this project dire
 * Integer overflow detection via `Math.addExact()`.
 * Concurrency stress-tested with **100 threads simultaneously** firing against a single key with 0 lost updates.
 
+### ✅ Phase 4: TTL Key Expiry (Lazy & Active Expiration)
+* Support for `SET key value EX seconds`, `TTL key`, and `EXPIRE key seconds`.
+* **Hybrid Expiration Architecture:**
+  * **Lazy Expiration (Passive):** Expired keys are detected and evicted on-the-fly during read operations (`GET`, `EXISTS`, `TTL`, `KEYS`).
+  * **Active Expiration (Background Daemon):** `ExpiryManager` runs a scheduled daemon thread sweeping expired keys periodically to prevent memory leaks.
+* Redis-compliant return codes: `-1` for keys without expiry, `-2` for non-existent/expired keys.
+
 ---
 
 ## 💻 Supported Commands
 
 | Command | Arguments | Description | Example Response |
 |---|---|---|---|
-| `SET` | `<key> <value>` | Stores a key-value pair in memory | `OK` |
+| `SET` | `<key> <value> [EX seconds]` | Stores a key-value pair, with optional TTL | `OK` |
 | `GET` | `<key>` | Retrieves the value for the key | `Asha` or `(nil)` |
 | `DEL` | `<key>` | Deletes the key from the store | `1` (deleted) or `0` (not found) |
 | `EXISTS`| `<key>` | Checks if key exists in the database | `1` (exists) or `0` (missing) |
-| `KEYS` | *(none)* | Returns all stored keys | `user:1, city, visits` |
+| `KEYS` | *(none)* | Returns all active, non-expired keys | `user:1, city, visits` |
 | `INCR` | `<key>` | Atomically increments numeric value by 1 | `1`, `2`, ... |
 | `DECR` | `<key>` | Atomically decrements numeric value by 1 | `0`, `-1`, ... |
+| `TTL` | `<key>` | Returns remaining time-to-live in seconds | `28`, `-1` (persist), `-2` (missing) |
+| `EXPIRE`| `<key> <seconds>` | Sets a timeout on an existing key | `1` (success) or `0` (missing) |
 | `QUIT` | *(none)* | Closes client connection gracefully | `BYE` |
 
 ---
@@ -186,7 +195,7 @@ SUCCESS: Exactly 100! Race condition was completely prevented!
 ---
 
 ## 🔮 Roadmap
-- [ ] Phase 4: TTL Key Expiry (`EX seconds`, background cleanup thread, lazy expiration)
+- [x] Phase 4: TTL Key Expiry (`EX seconds`, background cleanup thread, lazy expiration)
 - [ ] Phase 5: Memory Limit & LRU Eviction Policy
 - [ ] Phase 6: Persistence (Append-Only Log & Recovery on Startup)
 - [ ] Phase 7: Benchmarking Suite (Requests/sec) & Metrics

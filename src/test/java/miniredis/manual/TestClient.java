@@ -8,8 +8,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Interactive test client demonstrating MiniRedis commands:
- * SET, GET, EXISTS, KEYS, DEL, and QUIT.
+ * Interactive test client demonstrating MiniRedis commands including TTL and EXPIRE.
  */
 public class TestClient {
     public static void main(String[] args) {
@@ -30,22 +29,37 @@ public class TestClient {
             String[] testCommands = {
                 "SET name Asha",
                 "GET name",
-                "EXISTS name",
-                "SET city Hyderabad",
-                "KEYS",
-                "DEL name",
-                "GET name",
-                "EXISTS name",
+                "TTL name",
+                "SET otp 4821 EX 2",
+                "GET otp",
+                "TTL otp",
                 "INCR visits",
-                "INCR visits",
-                "DECR visits",
-                "INCR visits",
-                "INCR city",
+                "EXPIRE visits 2",
+                "TTL visits",
+                "KEYS"
+            };
+
+            for (String cmd : testCommands) {
+                System.out.println("-> Sending:  " + cmd);
+                out.println(cmd);
+
+                String reply = in.readLine();
+                System.out.println("<- Received: " + reply);
+                System.out.println();
+            }
+
+            System.out.println("Waiting 2.2 seconds for 'otp' and 'visits' to expire...");
+            Thread.sleep(2200);
+
+            String[] afterExpiryCommands = {
+                "GET otp",
+                "TTL otp",
+                "GET visits",
                 "KEYS",
                 "QUIT"
             };
 
-            for (String cmd : testCommands) {
+            for (String cmd : afterExpiryCommands) {
                 System.out.println("-> Sending:  " + cmd);
                 out.println(cmd);
 
