@@ -1,5 +1,6 @@
 package miniredis.command;
 
+import miniredis.persistence.PersistenceLog;
 import miniredis.store.Store;
 
 /**
@@ -10,10 +11,19 @@ import miniredis.store.Store;
 public class DelCommand implements Command {
     @Override
     public String execute(String[] args, Store store) {
+        return execute(args, store, null);
+    }
+
+    @Override
+    public String execute(String[] args, Store store, PersistenceLog persistenceLog) {
         if (args.length != 1) {
             return "(error) ERR wrong number of arguments for 'del' command";
         }
         boolean deleted = store.delete(args[0]);
+        if (deleted && persistenceLog != null) {
+            persistenceLog.logDel(args[0]);
+        }
         return deleted ? "1" : "0";
     }
 }
+

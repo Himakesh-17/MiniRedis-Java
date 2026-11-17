@@ -1,5 +1,7 @@
 package miniredis.command;
 
+import miniredis.persistence.PersistenceLog;
+import miniredis.store.Entry;
 import miniredis.store.Store;
 
 /**
@@ -10,6 +12,11 @@ import miniredis.store.Store;
 public class SetCommand implements Command {
     @Override
     public String execute(String[] args, Store store) {
+        return execute(args, store, null);
+    }
+
+    @Override
+    public String execute(String[] args, Store store, PersistenceLog persistenceLog) {
         if (args.length < 2) {
             return "(error) ERR wrong number of arguments for 'set' command";
         }
@@ -50,6 +57,14 @@ public class SetCommand implements Command {
             store.put(key, value);
         }
 
+        if (persistenceLog != null) {
+            Entry entry = store.getEntry(key);
+            if (entry != null) {
+                persistenceLog.logSet(key, entry.getValue(), entry.getExpiresAtMillis());
+            }
+        }
+
         return "OK";
     }
 }
+

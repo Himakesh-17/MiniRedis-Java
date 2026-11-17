@@ -1,5 +1,6 @@
 package miniredis.command;
 
+import miniredis.persistence.PersistenceLog;
 import miniredis.store.Store;
 
 /**
@@ -11,14 +12,23 @@ import miniredis.store.Store;
 public class IncrCommand implements Command {
     @Override
     public String execute(String[] args, Store store) {
+        return execute(args, store, null);
+    }
+
+    @Override
+    public String execute(String[] args, Store store, PersistenceLog persistenceLog) {
         if (args.length != 1) {
             return "(error) ERR wrong number of arguments for 'incr' command";
         }
         try {
             long result = store.incrementBy(args[0], 1);
+            if (persistenceLog != null) {
+                persistenceLog.logIncr(args[0]);
+            }
             return String.valueOf(result);
         } catch (NumberFormatException | ArithmeticException e) {
             return "(error) ERR value is not an integer or out of range";
         }
     }
 }
+

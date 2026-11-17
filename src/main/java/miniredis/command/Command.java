@@ -1,5 +1,6 @@
 package miniredis.command;
 
+import miniredis.persistence.PersistenceLog;
 import miniredis.store.Store;
 
 /**
@@ -15,4 +16,12 @@ public interface Command {
      * @return the formatted response string to send back to the client
      */
     String execute(String[] args, Store store);
+
+    /**
+     * Executes the command and optionally logs writes to the persistence log.
+     */
+    default String execute(String[] args, Store store, PersistenceLog persistenceLog) {
+        return execute(args, store);
+    }
 }
+

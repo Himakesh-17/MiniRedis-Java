@@ -1,5 +1,6 @@
 package miniredis.command;
 
+import miniredis.persistence.PersistenceLog;
 import miniredis.store.Store;
 
 import java.util.Arrays;
@@ -12,11 +13,17 @@ import java.util.Map;
  */
 public class CommandParser {
     private final Store store;
+    private final PersistenceLog persistenceLog;
     private final Map<String, Command> commandRegistry = new HashMap<>();
 
-    public CommandParser(Store store) {
+    public CommandParser(Store store, PersistenceLog persistenceLog) {
         this.store = store;
+        this.persistenceLog = persistenceLog;
         registerDefaultCommands();
+    }
+
+    public CommandParser(Store store) {
+        this(store, null);
     }
 
     private void registerDefaultCommands() {
@@ -30,6 +37,8 @@ public class CommandParser {
         commandRegistry.put("TTL", new TtlCommand());
         commandRegistry.put("EXPIRE", new ExpireCommand());
         commandRegistry.put("DBSIZE", new DbSizeCommand());
+        commandRegistry.put("REWRITELOG", new RewriteLogCommand());
+        commandRegistry.put("COMPACT", new RewriteLogCommand());
     }
 
     /**
@@ -57,10 +66,14 @@ public class CommandParser {
             return "(error) ERR unknown command '" + tokens[0] + "'";
         }
 
-        return command.execute(args, store);
+        return command.execute(args, store, persistenceLog);
     }
 
     public Store getStore() {
         return store;
+    }
+
+    public PersistenceLog getPersistenceLog() {
+        return persistenceLog;
     }
 }

@@ -115,6 +115,14 @@ Built without external heavy frameworks (no Spring, no Netty), this project dire
 * Synchronization ensuring `data`, `lruCache`, and background `ExpiryManager` stay in lockstep without memory leaks or race conditions.
 * Added `DBSIZE` command to monitor database key count.
 
+### ✅ Phase 6: Persistence via Append-Only Log (AOF) & Recovery
+* **Crash-Resilience:** All state-changing mutations (`SET`, `DEL`, `INCR`, `DECR`, `EXPIRE`) are logged to `appendonly.log`.
+* **Fast Startup Replay:** Server replays the log line-by-line upon boot before accepting client connections.
+* **Absolute TTL (`PXAT`):** Expirations are logged as epoch millisecond timestamps, preventing keys from receiving renewed TTLs upon replay.
+* **Corrupted Line Resilience:** Corrupted or half-written trailing lines are gracefully detected and skipped without crashing.
+* **Atomic Compaction (`REWRITELOG` / `COMPACT`):** Rewrites the log into a snapshot of only currently active keys using a temporary file and atomic replace (`Files.move`), preventing unbounded log growth.
+* **Configurable fsync Policy:** Supports `ALWAYS` (fsync each write), `EVERYSEC` (flush every write, fsync once per second), and `OFF`.
+
 ---
 
 ## 💻 Supported Commands
@@ -131,6 +139,7 @@ Built without external heavy frameworks (no Spring, no Netty), this project dire
 | `TTL` | `<key>` | Returns remaining time-to-live in seconds | `28`, `-1` (persist), `-2` (missing) |
 | `EXPIRE`| `<key> <seconds>` | Sets a timeout on an existing key | `1` (success) or `0` (missing) |
 | `DBSIZE`| *(none)* | Returns current number of keys in store | `3` |
+| `REWRITELOG` | *(none)* | Compacts the AOF persistence log | `OK` |
 | `QUIT` | *(none)* | Closes client connection gracefully | `BYE` |
 
 ---
@@ -206,5 +215,5 @@ SUCCESS: Exactly 100! Race condition was completely prevented!
 ## 🔮 Roadmap
 - [x] Phase 4: TTL Key Expiry (`EX seconds`, background cleanup thread, lazy expiration)
 - [x] Phase 5: Memory Limit & LRU Eviction Policy
-- [ ] Phase 6: Persistence (Append-Only Log & Recovery on Startup)
+- [x] Phase 6: Persistence (Append-Only Log & Recovery on Startup)
 - [ ] Phase 7: Benchmarking Suite (Requests/sec) & Metrics

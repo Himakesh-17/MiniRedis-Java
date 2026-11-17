@@ -1,6 +1,7 @@
 package miniredis.store;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -237,6 +238,34 @@ public class Store {
 
     public int size() {
         return keys().size();
+    }
+
+    /**
+     * Returns an unmodifiable snapshot of all currently active entries.
+     * Used by AOF compaction.
+     */
+    public Map<String, Entry> getActiveEntries() {
+        Map<String, Entry> snapshot = new HashMap<>();
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, Entry> e : data.entrySet()) {
+            Entry entry = e.getValue();
+            if (!entry.isExpired()) {
+                snapshot.put(e.getKey(), entry);
+            }
+        }
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    /**
+     * Retrieves the internal Entry for key.
+     */
+    public Entry getEntry(String key) {
+        Entry entry = data.get(key);
+        if (entry != null && entry.isExpired()) {
+            delete(key);
+            return null;
+        }
+        return entry;
     }
 
     public int getMaxSize() {

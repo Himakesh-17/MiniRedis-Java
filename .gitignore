@@ -4,5 +4,9 @@ out/
 .vscode/
 *.class
 *.log
+appendonly.log
+appendonly.log.tmp
+*.tmp
+*.aof
 *.iml
 .DS_Store

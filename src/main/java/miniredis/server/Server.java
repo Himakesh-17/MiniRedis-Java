@@ -1,6 +1,7 @@
 package miniredis.server;
 
 import miniredis.command.CommandParser;
+import miniredis.persistence.PersistenceLog;
 import miniredis.store.ExpiryManager;
 import miniredis.store.Store;
 
@@ -16,17 +17,23 @@ public class Server {
     private final Store store;
     private final CommandParser commandParser;
     private final ExpiryManager expiryManager;
+    private final PersistenceLog persistenceLog;
 
     // Fixed pool of 10 worker threads to handle concurrent clients
     private final ExecutorService threadPool = Executors.newFixedThreadPool(10);
     private ServerSocket serverSocket;
     private volatile boolean running = false;
 
-    public Server(int port, Store store) {
+    public Server(int port, Store store, PersistenceLog persistenceLog) {
         this.port = port;
         this.store = store;
-        this.commandParser = new CommandParser(store);
+        this.persistenceLog = persistenceLog;
+        this.commandParser = new CommandParser(store, persistenceLog);
         this.expiryManager = new ExpiryManager(store);
+    }
+
+    public Server(int port, Store store) {
+        this(port, store, null);
     }
 
     public Server(int port) {
@@ -77,6 +84,9 @@ public class Server {
         running = false;
         System.out.println("[Server] Shutting down MiniRedis server...");
         expiryManager.stop();
+        if (persistenceLog != null) {
+            persistenceLog.close();
+        }
 
         if (serverSocket != null && !serverSocket.isClosed()) {
             try {
