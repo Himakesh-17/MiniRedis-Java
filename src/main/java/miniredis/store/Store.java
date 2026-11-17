@@ -7,31 +7,81 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Thread-safe in-memory key-value store with TTL (Time-To-Live) expiration.
- * Backed by ConcurrentHashMap<String, Entry>.
+ * Thread-safe in-memory key-value store with:
+ * 1. TTL (Time-To-Live) lazy and active expiration.
+ * 2. Maximum key capacity with custom LRU (Least Recently Used) eviction.
  */
 public class Store {
-    // Maps each key to an Entry containing its value and expiration timestamp
+    public static final int DEFAULT_MAX_SIZE = 1000;
+
+    private final int maxSize;
     private final ConcurrentHashMap<String, Entry> data = new ConcurrentHashMap<>();
+    private final LruCache lruCache = new LruCache();
+    private final Object evictionLock = new Object();
+
+    public Store(int maxSize) {
+        if (maxSize <= 0) {
+            throw new IllegalArgumentException("Max size must be greater than 0");
+        }
+        this.maxSize = maxSize;
+    }
+
+    public Store() {
+        this(DEFAULT_MAX_SIZE);
+    }
 
     /**
-     * Stores a key-value pair with no expiration (persists indefinitely).
+     * Stores a key-value pair without expiration.
+     * Evicts the Least Recently Used key if capacity is reached.
      */
     public void put(String key, String value) {
-        data.put(key, new Entry(value));
+        putWithExpiry(key, value, null);
     }
 
     /**
-     * Stores a key-value pair that expires after the given number of seconds.
+     * Stores a key-value pair that expires after ttlSeconds.
+     * Evicts the Least Recently Used key if capacity is reached.
      */
     public void put(String key, String value, long ttlSeconds) {
-        long expiresAt = System.currentTimeMillis() + (ttlSeconds * 1000L);
-        data.put(key, new Entry(value, expiresAt));
+        putWithExpiry(key, value, ttlSeconds);
+    }
+
+    private void putWithExpiry(String key, String value, Long ttlSeconds) {
+        synchronized (evictionLock) {
+            Entry existing = data.get(key);
+            Long expiresAt = (ttlSeconds != null) ? System.currentTimeMillis() + (ttlSeconds * 1000L) : null;
+
+            if (existing != null && !existing.isExpired()) {
+                // Updating existing key does NOT trigger eviction; just update and touch
+                data.put(key, new Entry(value, expiresAt));
+                lruCache.touch(key);
+                return;
+            }
+
+            // It's a brand new (or previously expired) key
+            // First, purge any expired keys to see if space frees up naturally
+            if (data.size() >= maxSize) {
+                purgeExpiredKeys();
+            }
+
+            // If still full, evict the Least Recently Used key
+            while (data.size() >= maxSize) {
+                String evictedKey = lruCache.removeLast();
+                if (evictedKey == null) {
+                    break;
+                }
+                data.remove(evictedKey);
+            }
+
+            data.put(key, new Entry(value, expiresAt));
+            lruCache.add(key);
+        }
     }
 
     /**
-     * Retrieves the value for a key, applying lazy expiration.
-     * If the key is expired, it is removed immediately and null is returned.
+     * Retrieves the value for key.
+     * On HIT, moves key to front as Most Recently Used.
+     * On EXPIRED, removes it from both data and LRU.
      */
     public String get(String key) {
         Entry entry = data.get(key);
@@ -39,24 +89,33 @@ public class Store {
             return null;
         }
         if (entry.isExpired()) {
-            // Lazy expiration: delete upon access
-            data.remove(key, entry);
+            delete(key); // Cleans up from data and LRU
             return null;
         }
+        lruCache.touch(key); // HIT -> touch
         return entry.getValue();
     }
 
+    /**
+     * Deletes a key from data and the LRU cache.
+     */
     public boolean delete(String key) {
-        return data.remove(key) != null;
+        synchronized (evictionLock) {
+            boolean removed = data.remove(key) != null;
+            lruCache.remove(key);
+            return removed;
+        }
     }
 
+    /**
+     * Checks if key exists. Refreshes LRU on hit.
+     */
     public boolean exists(String key) {
-        // Must perform lazy expiration check so expired keys return false
         return get(key) != null;
     }
 
     /**
-     * Returns an unmodifiable set of all active, non-expired keys.
+     * Returns all active, non-expired keys.
      */
     public Set<String> keys() {
         Set<String> validKeys = new HashSet<>();
@@ -64,8 +123,7 @@ public class Store {
         for (Map.Entry<String, Entry> e : data.entrySet()) {
             Entry entry = e.getValue();
             if (entry.hasExpiry() && now >= entry.getExpiresAtMillis()) {
-                // Passively clean expired keys encountered during iteration
-                data.remove(e.getKey(), entry);
+                delete(e.getKey());
             } else {
                 validKeys.add(e.getKey());
             }
@@ -74,10 +132,7 @@ public class Store {
     }
 
     /**
-     * Returns the remaining time-to-live of a key in seconds according to Redis spec:
-     *   -2 if the key does not exist (or has expired).
-     *   -1 if the key exists but has no expiration.
-     *   >= 0 remaining lifetime in seconds.
+     * Returns TTL of key according to Redis spec.
      */
     public long ttl(String key) {
         Entry entry = data.get(key);
@@ -85,57 +140,78 @@ public class Store {
             return -2;
         }
         if (entry.isExpired()) {
-            data.remove(key, entry);
+            delete(key);
             return -2;
         }
+        lruCache.touch(key);
         return entry.getTtlSeconds();
     }
 
     /**
-     * Sets an expiration timeout in seconds on an existing key.
-     *
-     * @return true if the timeout was set, false if the key does not exist or expired.
+     * Sets expiration on an existing key and refreshes its LRU position.
      */
     public boolean expire(String key, long ttlSeconds) {
-        if (ttlSeconds <= 0) {
-            // Setting TTL <= 0 deletes the key according to Redis specification
-            return delete(key);
-        }
-        long expiresAt = System.currentTimeMillis() + (ttlSeconds * 1000L);
-        Entry updated = data.computeIfPresent(key, (k, existing) -> {
-            if (existing.isExpired()) {
-                return null; // Key expired; remove it
+        synchronized (evictionLock) {
+            if (ttlSeconds <= 0) {
+                return delete(key);
             }
-            return new Entry(existing.getValue(), expiresAt);
-        });
-        return updated != null;
+            Entry entry = data.get(key);
+            if (entry == null || entry.isExpired()) {
+                delete(key);
+                return false;
+            }
+            long expiresAt = System.currentTimeMillis() + (ttlSeconds * 1000L);
+            data.put(key, new Entry(entry.getValue(), expiresAt));
+            lruCache.touch(key);
+            return true;
+        }
     }
 
     /**
-     * Atomically increments or decrements the integer value stored at key by delta.
-     * If the key does not exist or has expired, it is initialized to 0.
+     * Atomically increments or decrements the numeric value stored at key.
+     * Counts as usage (refreshes LRU position).
      */
     public long incrementBy(String key, long delta) throws NumberFormatException, ArithmeticException {
-        Entry updated = data.compute(key, (k, existing) -> {
+        synchronized (evictionLock) {
+            Entry existing = data.get(key);
             long current = 0;
             Long preserveExpiry = null;
-            if (existing != null) {
-                if (!existing.isExpired()) {
-                    current = Long.parseLong(existing.getValue());
-                    preserveExpiry = existing.getExpiresAtMillis();
+            boolean isNew = false;
+
+            if (existing != null && !existing.isExpired()) {
+                current = Long.parseLong(existing.getValue());
+                preserveExpiry = existing.getExpiresAtMillis();
+            } else {
+                isNew = true;
+                if (data.size() >= maxSize) {
+                    purgeExpiredKeys();
+                }
+                while (data.size() >= maxSize) {
+                    String evicted = lruCache.removeLast();
+                    if (evicted == null) {
+                        break;
+                    }
+                    data.remove(evicted);
                 }
             }
+
             long next = Math.addExact(current, delta);
-            return new Entry(String.valueOf(next), preserveExpiry);
-        });
-        return Long.parseLong(updated.getValue());
+            data.put(key, new Entry(String.valueOf(next), preserveExpiry));
+
+            if (isNew) {
+                lruCache.add(key);
+            } else {
+                lruCache.touch(key);
+            }
+
+            return next;
+        }
     }
 
     /**
-     * Active expiration cleanup: iterates through keys and purges expired ones.
-     * Called periodically by ExpiryManager.
+     * Active expiration cleanup: purges expired keys from both data and LRU.
      *
-     * @return count of keys purged in this pass
+     * @return count of keys purged
      */
     public int purgeExpiredKeys() {
         int purged = 0;
@@ -144,6 +220,7 @@ public class Store {
             Entry entry = e.getValue();
             if (entry.hasExpiry() && now >= entry.getExpiresAtMillis()) {
                 if (data.remove(e.getKey(), entry)) {
+                    lruCache.remove(e.getKey());
                     purged++;
                 }
             }
@@ -152,10 +229,21 @@ public class Store {
     }
 
     public void clear() {
-        data.clear();
+        synchronized (evictionLock) {
+            data.clear();
+            lruCache.clear();
+        }
     }
 
     public int size() {
         return keys().size();
+    }
+
+    public int getMaxSize() {
+        return maxSize;
+    }
+
+    LruCache getLruCache() {
+        return lruCache;
     }
 }

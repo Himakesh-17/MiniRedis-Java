@@ -107,6 +107,14 @@ Built without external heavy frameworks (no Spring, no Netty), this project dire
   * **Active Expiration (Background Daemon):** `ExpiryManager` runs a scheduled daemon thread sweeping expired keys periodically to prevent memory leaks.
 * Redis-compliant return codes: `-1` for keys without expiry, `-2` for non-existent/expired keys.
 
+### ✅ Phase 5: Memory Limits with Custom LRU Eviction
+* Configurable max key limit (`Store(maxSize)` or CLI argument `miniredis.Main [maxKeys]`).
+* Custom **Doubly Linked List + HashMap** LRU engine built from scratch (no `LinkedHashMap`).
+* **Sentinel (dummy) HEAD and TAIL nodes** eliminating null checks and edge-case pointer bugs.
+* Guaranteed $O(1)$ operations for `touch`, `add`, `remove`, and `removeLast`.
+* Synchronization ensuring `data`, `lruCache`, and background `ExpiryManager` stay in lockstep without memory leaks or race conditions.
+* Added `DBSIZE` command to monitor database key count.
+
 ---
 
 ## 💻 Supported Commands
@@ -122,6 +130,7 @@ Built without external heavy frameworks (no Spring, no Netty), this project dire
 | `DECR` | `<key>` | Atomically decrements numeric value by 1 | `0`, `-1`, ... |
 | `TTL` | `<key>` | Returns remaining time-to-live in seconds | `28`, `-1` (persist), `-2` (missing) |
 | `EXPIRE`| `<key> <seconds>` | Sets a timeout on an existing key | `1` (success) or `0` (missing) |
+| `DBSIZE`| *(none)* | Returns current number of keys in store | `3` |
 | `QUIT` | *(none)* | Closes client connection gracefully | `BYE` |
 
 ---
@@ -196,6 +205,6 @@ SUCCESS: Exactly 100! Race condition was completely prevented!
 
 ## 🔮 Roadmap
 - [x] Phase 4: TTL Key Expiry (`EX seconds`, background cleanup thread, lazy expiration)
-- [ ] Phase 5: Memory Limit & LRU Eviction Policy
+- [x] Phase 5: Memory Limit & LRU Eviction Policy
 - [ ] Phase 6: Persistence (Append-Only Log & Recovery on Startup)
 - [ ] Phase 7: Benchmarking Suite (Requests/sec) & Metrics

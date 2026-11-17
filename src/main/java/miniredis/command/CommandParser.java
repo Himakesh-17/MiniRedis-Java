@@ -29,6 +29,7 @@ public class CommandParser {
         commandRegistry.put("DECR", new DecrCommand());
         commandRegistry.put("TTL", new TtlCommand());
         commandRegistry.put("EXPIRE", new ExpireCommand());
+        commandRegistry.put("DBSIZE", new DbSizeCommand());
     }
 
     /**
