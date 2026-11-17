@@ -13,27 +13,33 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class Server {
+    public static final int DEFAULT_WORKER_THREADS = 64;
+
     private final int port;
     private final Store store;
     private final CommandParser commandParser;
     private final ExpiryManager expiryManager;
     private final PersistenceLog persistenceLog;
+    private final ExecutorService threadPool;
 
-    // Fixed pool of 10 worker threads to handle concurrent clients
-    private final ExecutorService threadPool = Executors.newFixedThreadPool(10);
     private ServerSocket serverSocket;
     private volatile boolean running = false;
 
-    public Server(int port, Store store, PersistenceLog persistenceLog) {
+    public Server(int port, Store store, PersistenceLog persistenceLog, int workerThreads) {
         this.port = port;
         this.store = store;
         this.persistenceLog = persistenceLog;
         this.commandParser = new CommandParser(store, persistenceLog);
         this.expiryManager = new ExpiryManager(store);
+        this.threadPool = Executors.newFixedThreadPool(workerThreads);
+    }
+
+    public Server(int port, Store store, PersistenceLog persistenceLog) {
+        this(port, store, persistenceLog, DEFAULT_WORKER_THREADS);
     }
 
     public Server(int port, Store store) {
-        this(port, store, null);
+        this(port, store, null, DEFAULT_WORKER_THREADS);
     }
 
     public Server(int port) {

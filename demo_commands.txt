@@ -1,0 +1,81 @@
+================================================================================
+          MiniRedis Live Demo Script (For Recording Demo GIF)
+================================================================================
+Free Tool Recommendation for Windows:
+Download "ScreenToGif" (https://www.screentogif.com/) - free, open-source, lightweight.
+Tip: Open two PowerShell windows side-by-side with a dark theme.
+
+--------------------------------------------------------------------------------
+PART 1: Start MiniRedis Server with LRU Capacity Limit = 3
+--------------------------------------------------------------------------------
+[TERMINAL 1 - SERVER]
+cd "C:\Users\HIMAKESH PUTHUMBAKU\.gemini\antigravity\scratch\miniredis"
+java -cp target/classes miniredis.Main 3
+
+--------------------------------------------------------------------------------
+PART 2: Basic Commands & TTL Expiry
+--------------------------------------------------------------------------------
+[TERMINAL 2 - CLIENT]
+# Connect using netcat / telnet or PowerShell TCP client:
+# (Paste this block to connect):
+$c = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 6380); $s = $c.GetStream(); $r = New-Object System.IO.StreamReader($s); $w = New-Object System.IO.StreamWriter($s); $w.AutoFlush = $true
+
+# 1. Set and retrieve a normal key:
+$w.WriteLine("SET name Asha"); $r.ReadLine()
+$w.WriteLine("GET name"); $r.ReadLine()
+
+# 2. Set an OTP with 3-second TTL:
+$w.WriteLine("SET otp 4821 EX 3"); $r.ReadLine()
+$w.WriteLine("GET otp"); $r.ReadLine()
+$w.WriteLine("TTL otp"); $r.ReadLine()
+
+# Wait 3.5 seconds and watch the key vanish:
+Start-Sleep -Seconds 4
+$w.WriteLine("GET otp"); $r.ReadLine()
+$w.WriteLine("TTL otp"); $r.ReadLine()
+
+--------------------------------------------------------------------------------
+PART 3: Custom LRU Cache Eviction (Limit = 3)
+--------------------------------------------------------------------------------
+# Current state: only 'name' exists in the store (DBSIZE: 1)
+$w.WriteLine("SET k1 alpha"); $r.ReadLine()
+$w.WriteLine("SET k2 beta");  $r.ReadLine()
+# Store is now full: [k2, k1, name]
+$w.WriteLine("DBSIZE"); $r.ReadLine()
+$w.WriteLine("KEYS");   $r.ReadLine()
+
+# Touch 'name' by reading it -> 'name' is now Most Recently Used! Order is: [name, k2, k1]
+$w.WriteLine("GET name"); $r.ReadLine()
+
+# Add a 4th key 'k3' -> Forces eviction of 'k1' (the Least Recently Used key)!
+$w.WriteLine("SET k3 gamma"); $r.ReadLine()
+
+# Verify that 'k1' was evicted while 'name', 'k2', and 'k3' remain:
+$w.WriteLine("GET k1"); $r.ReadLine()   # Output: (nil)
+$w.WriteLine("KEYS");   $r.ReadLine()   # Output: name, k2, k3
+$w.WriteLine("DBSIZE"); $r.ReadLine()   # Output: 3
+
+--------------------------------------------------------------------------------
+PART 4: Crash & Recovery from Append-Only Log (AOF)
+--------------------------------------------------------------------------------
+# Send an atomic INCR before crashing:
+$w.WriteLine("INCR counter"); $r.ReadLine()
+$c.Close()
+
+# In TERMINAL 1 (Server): Press Ctrl+C to kill the server!
+
+# In TERMINAL 1: Restart the server:
+java -cp target/classes miniredis.Main 3
+
+# Notice the server startup banner shows:
+# [Main] Replaying Append-Only Log from appendonly.log...
+# [Main] AOF replay complete. Replayed X commands.
+
+# In TERMINAL 2: Reconnect and verify data survived:
+$c = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 6380); $s = $c.GetStream(); $r = New-Object System.IO.StreamReader($s); $w = New-Object System.IO.StreamWriter($s); $w.AutoFlush = $true
+$w.WriteLine("GET name"); $r.ReadLine()
+$w.WriteLine("GET counter"); $r.ReadLine()
+$w.WriteLine("KEYS"); $r.ReadLine()
+$w.WriteLine("QUIT"); $r.ReadLine()
+$c.Close()
+================================================================================
